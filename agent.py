@@ -21,7 +21,7 @@ from livekit import rtc
 from livekit.agents import JobContext, WorkerOptions, cli
 
 import vani1092.database as db
-from vani1092.audio_utils import livekit_to_wav, wav_to_livekit_frames, is_speech_present
+from vani1092.audio_utils import audio_energy, livekit_to_wav, wav_to_livekit_frames, is_speech_present
 from vani1092.sarvam_client import stt_with_meta as sarvam_stt_with_meta, tts as sarvam_tts
 from vani1092.conversation_engine import (
     analyze_transcript,
@@ -44,7 +44,7 @@ async def publish_ui_event(room: rtc.Room, payload: dict):
     try:
         await room.local_participant.publish_data(
             json.dumps(payload).encode("utf-8"),
-            reliability=rtc.DataPacketReliability.RELIABLE,
+            reliable=True,
         )
     except Exception as e:
         print(f"[Data Error] {e}", flush=True)
@@ -68,12 +68,21 @@ async def entrypoint(ctx: JobContext):
     audio_source = rtc.AudioSource(48000, 1)
     track = rtc.LocalAudioTrack.create_audio_track("agent-voice", audio_source)
     await room.local_participant.publish_track(track)
+
+    handled_audio_tracks = set()
+
+    def attach_citizen_audio(track: rtc.Track, participant: rtc.RemoteParticipant):
+        track_id = getattr(track, "sid", None) or f"{participant.identity}:{id(track)}"
+        if track_id in handled_audio_tracks:
+            return
+        handled_audio_tracks.add(track_id)
+        print(f"[Agent] Subscribed to {participant.identity}'s audio")
+        asyncio.create_task(handle_citizen(track, participant, room, audio_source))
     
     @room.on("track_subscribed")
     def on_track_subscribed(track: rtc.Track, pub, participant: rtc.RemoteParticipant):
         if track.kind == rtc.TrackKind.KIND_AUDIO:
-            print(f"[Agent] Subscribed to {participant.identity}'s audio")
-            asyncio.create_task(handle_citizen(track, participant, room, audio_source))
+            attach_citizen_audio(track, participant)
     
     @room.on("track_unsubscribed")
     def on_track_unsubscribed(track: rtc.Track, pub, participant: rtc.RemoteParticipant):
@@ -82,6 +91,18 @@ async def entrypoint(ctx: JobContext):
             call_id = participant_states[participant.identity]["call_id"]
             db.update_call(call_id, status="ended", ended_at=datetime.now(timezone.utc).isoformat())
             del participant_states[participant.identity]
+
+    # A dispatched worker can join after the browser already published its mic.
+    # Subscribe to those existing publications so the first utterance is not lost.
+    for participant in room.remote_participants.values():
+        for pub in participant.track_publications.values():
+            if pub.kind != rtc.TrackKind.KIND_AUDIO:
+                continue
+            if pub.track:
+                attach_citizen_audio(pub.track, participant)
+            elif not pub.subscribed:
+                print(f"[Agent] Requesting existing audio subscription for {participant.identity}", flush=True)
+                pub.set_subscribed(True)
     
     while True:
         await asyncio.sleep(1)
@@ -112,7 +133,9 @@ async def handle_citizen(track: rtc.Track, participant, room, audio_source):
     
     audio_stream = rtc.AudioStream(track, sample_rate=48000, num_channels=1)
     buffer = bytearray()
-    last_speech_time = asyncio.get_event_loop().time()
+    utterance = bytearray()
+    chunk_bytes = int(48000 * 2 * 1.0)  # 1s, 48kHz, mono, int16
+    max_utterance_bytes = int(48000 * 2 * 6.0)
     
     async for frame in audio_stream:
         state = participant_states.get(participant.identity)
@@ -120,32 +143,46 @@ async def handle_citizen(track: rtc.Track, participant, room, audio_source):
             break
         
         buffer.extend(frame.frame.data.tobytes())
-        now = asyncio.get_event_loop().time()
         
-        # Process every ~1.5 seconds of audio
-        if len(buffer) >= 48000 * 2 * 1.5:  # 1.5s, 48kHz, mono, int16
+        # Build a whole utterance instead of sending tiny fixed fragments to STT.
+        if len(buffer) >= chunk_bytes:
             data = bytes(buffer)
             buffer = bytearray()
-            
-            if not is_speech_present(data):
-                print(f"[Agent] Audio chunk had no clear speech ({len(data)} bytes)", flush=True)
+            peak, rms = audio_energy(data)
+            has_speech = is_speech_present(data)
+
+            if has_speech:
+                utterance.extend(data)
+                if len(utterance) < max_utterance_bytes:
+                    await publish_ui_event(room, {
+                        "type": "debug",
+                        "stage": "audio",
+                        "text": f"Agent is buffering speech ({len(utterance)} bytes, peak={peak}, rms={rms:.1f}).",
+                    })
+                    continue
+            elif not utterance:
+                print(f"[Agent] Audio chunk had no clear speech ({len(data)} bytes, peak={peak}, rms={rms:.1f})", flush=True)
                 await publish_ui_event(room, {
                     "type": "debug",
                     "stage": "audio",
-                    "text": f"Audio reached agent, but speech energy was low ({len(data)} bytes).",
+                    "text": f"Audio reached agent, but speech energy was low ({len(data)} bytes, peak={peak}, rms={rms:.1f}).",
                 })
                 continue
+            else:
+                print(f"[Agent] Speech phrase ended at silence (peak={peak}, rms={rms:.1f})", flush=True)
 
-            print(f"[Agent] Speech detected, processing {len(data)} bytes...", flush=True)
+            speech_data = bytes(utterance)
+            utterance = bytearray()
+            print(f"[Agent] Speech detected, processing {len(speech_data)} bytes (last peak={peak}, rms={rms:.1f})...", flush=True)
             await publish_ui_event(room, {
                 "type": "debug",
                 "stage": "audio",
-                "text": f"Agent received microphone audio ({len(data)} bytes). Sending to STT.",
+                "text": f"Agent received a speech phrase ({len(speech_data)} bytes). Sending to STT.",
             })
             
             # STT
             try:
-                wav = livekit_to_wav(data, sample_rate=48000, channels=1)
+                wav = livekit_to_wav(speech_data, sample_rate=48000, channels=1)
                 stt_result = sarvam_stt_with_meta(wav, language_code="unknown")
             except Exception as e:
                 print(f"[STT Error] {e}", flush=True)
@@ -281,7 +318,7 @@ async def do_handoff(call_id: str, state: dict, room: rtc.Room):
         import json
         try:
             transcript = json.loads(call.get("transcript", "[]"))
-        except:
+        except Exception:
             pass
     
     payload = build_handoff_payload(call_id, analysis, transcript)
@@ -309,4 +346,10 @@ async def do_handoff(call_id: str, state: dict, room: rtc.Room):
 
 if __name__ == "__main__":
     db.init_db()
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            agent_name=os.getenv("LIVEKIT_AGENT_NAME", "vani-agent"),
+            initialize_process_timeout=30.0,
+        )
+    )

@@ -13,16 +13,18 @@ Provides:
 - /health            → Health check
 """
 
-import json
 import os
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 import uvicorn
 
 import vani1092.database as db
+
+load_dotenv()
 
 app = FastAPI(title="Vani-1092 API")
 app.add_middleware(
@@ -36,6 +38,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 LIVEKIT_URL = os.getenv("LIVEKIT_URL", "")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
+LIVEKIT_AGENT_NAME = os.getenv("LIVEKIT_AGENT_NAME", "vani-agent")
 
 
 def _has_livekit_creds() -> bool:
@@ -77,6 +80,12 @@ def _generate_token(room: str, identity: str) -> str:
         return jwt.encode(payload, LIVEKIT_API_SECRET, algorithm="HS256")
 
 
+@app.on_event("startup")
+async def startup():
+    db.init_db()
+    db.create_operator("op1", "Priya Sharma", ["hi", "en", "kn"])
+
+
 @app.get("/")
 async def root():
     return {
@@ -89,7 +98,8 @@ async def root():
 @app.get("/client")
 async def client_page():
     try:
-        html = open("static/index.html").read()
+        with open("static/index.html", encoding="utf-8") as f:
+            html = f.read()
         # Inject LiveKit URL into client
         html = html.replace("wss://your-project.livekit.cloud", LIVEKIT_URL)
     except FileNotFoundError:
@@ -100,7 +110,8 @@ async def client_page():
 @app.get("/dashboard")
 async def dashboard_page():
     try:
-        html = open("static/dashboard.html").read()
+        with open("static/dashboard.html", encoding="utf-8") as f:
+            html = f.read()
     except FileNotFoundError:
         html = "<h1>Dashboard not found</h1>"
     return HTMLResponse(content=html)
@@ -110,9 +121,35 @@ async def dashboard_page():
 async def api_token(room: str = Query(...), identity: str = Query(...)):
     """Generate a LiveKit access token for the web client."""
     if not _has_livekit_creds():
-        return {"error": "LiveKit credentials not configured"}, 500
+        raise HTTPException(status_code=500, detail="LiveKit credentials not configured")
     jwt_token = _generate_token(room, identity)
     return {"token": jwt_token, "url": LIVEKIT_URL}
+
+
+@app.post("/api/dispatch")
+async def api_dispatch(room: str = Query(...)):
+    """Explicitly dispatch the named Vani agent into a LiveKit room."""
+    if not _has_livekit_creds():
+        raise HTTPException(status_code=500, detail="LiveKit credentials not configured")
+
+    from livekit import api
+
+    lkapi = api.LiveKitAPI(LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
+    try:
+        dispatch = await lkapi.agent_dispatch.create_dispatch(
+            api.CreateAgentDispatchRequest(
+                room=room,
+                agent_name=LIVEKIT_AGENT_NAME,
+                metadata='{"source":"vani-client"}',
+            )
+        )
+        print(f"[Dispatch] {LIVEKIT_AGENT_NAME} -> {room}", flush=True)
+        return {"status": "dispatched", "room": room, "agent_name": LIVEKIT_AGENT_NAME, "dispatch_id": dispatch.id}
+    except Exception as e:
+        print(f"[Dispatch Error] {e}", flush=True)
+        raise HTTPException(status_code=502, detail=f"Agent dispatch failed: {e}") from e
+    finally:
+        await lkapi.aclose()
 
 
 @app.get("/api/calls")

@@ -76,10 +76,18 @@ def wav_to_livekit_frames(wav_bytes: bytes, target_sr: int = 48000) -> list[byte
     return frames
 
 
-def is_speech_present(audio_bytes: bytes, threshold: int = 300) -> bool:
-    """Simple energy-based VAD. Returns True if audio has significant energy."""
+def audio_energy(audio_bytes: bytes) -> tuple[int, float]:
+    """Return peak and RMS energy for signed 16-bit PCM audio."""
     arr = np.frombuffer(audio_bytes, dtype=np.int16)
     if len(arr) == 0:
-        return False
-    peak = np.abs(arr).max()
-    return peak > threshold
+        return 0, 0.0
+    arr_float = arr.astype(np.float32)
+    peak = int(np.abs(arr_float).max())
+    rms = float(np.sqrt(np.mean(arr_float * arr_float)))
+    return peak, rms
+
+
+def is_speech_present(audio_bytes: bytes, peak_threshold: int = 80, rms_threshold: float = 6.0) -> bool:
+    """Conservative energy gate; browser mics can arrive much quieter than files."""
+    peak, rms = audio_energy(audio_bytes)
+    return peak > peak_threshold or rms > rms_threshold

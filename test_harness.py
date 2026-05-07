@@ -8,7 +8,6 @@ to test the core logic: intent extraction, urgency detection, confirmation flow.
 """
 
 import asyncio
-import json
 from dataclasses import dataclass
 
 from vani1092.conversation_engine import (

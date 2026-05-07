@@ -395,7 +395,10 @@
 </main>
 
 <script>
-const API_BASE = window.location.protocol + '//' + window.location.host;
+const API_BASE = window.location.protocol === 'file:'
+    ? 'http://127.0.0.1:8001'
+    : window.location.protocol + '//' + window.location.host;
+const CALL_STEP_TIMEOUT_MS = 20000;
 let room = null;
 let remoteAudio = null;
 let micReady = false;
@@ -428,6 +431,37 @@ function addDebug(stage, text) {
     const log = document.getElementById('debugLog');
     log.appendChild(line);
     log.scrollTop = log.scrollHeight;
+}
+
+function withTimeout(promise, ms, label) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(label + ' timed out')), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function fetchJsonOrThrow(url, options, label) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CALL_STEP_TIMEOUT_MS);
+    try {
+        const res = await fetch(url, { ...(options || {}), signal: controller.signal });
+        let data = {};
+        try {
+            data = await res.json();
+        } catch (e) {
+            throw new Error(label + ' returned non-JSON response');
+        }
+        if (!res.ok) {
+            throw new Error(data.detail || data.error || label + ' failed with HTTP ' + res.status);
+        }
+        return data;
+    } catch (e) {
+        if (e.name === 'AbortError') throw new Error(label + ' timed out');
+        throw e;
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 function startLocalSpeechPreview() {
@@ -499,16 +533,19 @@ async function startCall() {
     setConnectionText('Authenticating');
 
     try {
+        if (!window.LivekitClient || !window.LivekitClient.Room) {
+            throw new Error('LiveKit browser library did not load');
+        }
         const identity = 'citizen-' + Math.random().toString(36).slice(2, 7);
         const roomName = 'vani-1092-' + Math.random().toString(36).slice(2, 5);
-        const tokenRes = await fetch(`${API_BASE}/api/token?room=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
-        const tokenData = await tokenRes.json();
+        const tokenData = await fetchJsonOrThrow(
+            `${API_BASE}/api/token?room=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`,
+            {},
+            'Token request'
+        );
 
-        if (tokenData.error) {
-            setStatus('Connection error: ' + tokenData.error, 'critical');
-            resetButtons();
-            setConnectionText('Error');
-            return;
+        if (!tokenData.url || !tokenData.token) {
+            throw new Error('Token response was missing LiveKit url/token');
         }
 
         setStatus('Connecting to voice room...', '');
@@ -570,9 +607,18 @@ async function startCall() {
             }
         });
 
-        await room.connect(tokenData.url, tokenData.token);
+        await withTimeout(room.connect(tokenData.url, tokenData.token), CALL_STEP_TIMEOUT_MS, 'LiveKit connect');
+        const dispatchData = await fetchJsonOrThrow(
+            `${API_BASE}/api/dispatch?room=${encodeURIComponent(roomName)}`,
+            { method: 'POST' },
+            'Agent dispatch'
+        );
+        if (dispatchData.status !== 'dispatched') {
+            throw new Error('Agent dispatch did not return dispatched status');
+        }
+        addDebug('dispatch', 'Requested Vani agent for room ' + roomName + '.');
         setStatus('Allow microphone access to start speaking.', 'high');
-        await room.localParticipant.setMicrophoneEnabled(true);
+        await withTimeout(room.localParticipant.setMicrophoneEnabled(true), CALL_STEP_TIMEOUT_MS, 'Microphone start');
         micReady = true;
         setStatus('Connected. Speak now.', 'connected');
         setConnectionText('Microphone active');

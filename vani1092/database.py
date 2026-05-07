@@ -84,7 +84,21 @@ def get_call(call_id: str):
 def list_active_calls():
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM calls WHERE status IN ('active', 'waiting_operator') ORDER BY CASE urgency WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END, created_at"
+            """
+            SELECT *
+            FROM calls
+            WHERE status = 'waiting_operator'
+              AND handoff_payload IS NOT NULL
+              AND caller_number NOT LIKE 'demo%'
+            ORDER BY
+              CASE urgency
+                WHEN 'CRITICAL' THEN 1
+                WHEN 'HIGH' THEN 2
+                WHEN 'MEDIUM' THEN 3
+                ELSE 4
+              END,
+              created_at
+            """
         ).fetchall()
         return [dict(r) for r in rows]
 
