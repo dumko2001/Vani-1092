@@ -31,8 +31,8 @@ from vani1092.conversation_engine import (
     build_route_message,
     check_confirmation_response,
     build_handoff_payload,
-    CONFIDENCE_THRESHOLD,
 )
+from vani1092.config import CONFIDENCE_THRESHOLD
 
 load_dotenv()
 
