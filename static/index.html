@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vani-1092 | Citizen Helpline</title>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.0.10/dist/livekit-client.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #f3f5fb;
+            --surface: #ffffff;
+            --surface-2: #f8f9fe;
+            --text: #13203f;
+            --muted: #5e6a84;
+            --border: #dbe2f1;
+            --navy: #192b78;
+            --navy-strong: #12205c;
+            --success-bg: #e9f7ef;
+            --success-text: #146a3a;
+            --warn-bg: #fff4e7;
+            --warn-text: #9b5700;
+            --danger-bg: #feecef;
+            --danger-text: #9b1c2f;
+            --shadow: 0 16px 36px rgba(19, 32, 63, 0.10);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "Segoe UI", "Noto Sans", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at 8% 8%, rgba(25, 43, 120, 0.10), transparent 32%),
+                radial-gradient(circle at 92% 92%, rgba(27, 126, 66, 0.08), transparent 36%),
+                var(--bg);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topbar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--navy);
+        }
+
+        .brand-mark {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: inline-grid;
+            place-items: center;
+            color: #fff;
+            background: linear-gradient(135deg, #243a96 0%, #12205c 100%);
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .session {
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .wrap {
+            flex: 1;
+            display: grid;
+            place-items: center;
+            padding: 28px 16px;
+        }
+
+        .call-panel {
+            width: min(560px, 100%);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .panel-head {
+            background: linear-gradient(180deg, #22378e 0%, #182b73 100%);
+            color: #fff;
+            padding: 22px 22px 18px;
+        }
+
+        .panel-head h1 {
+            font-size: 24px;
+            line-height: 1.2;
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        .panel-head p {
+            font-size: 14px;
+            line-height: 1.45;
+            opacity: 0.92;
+        }
+
+        .panel-body { padding: 20px 22px 22px; }
+
+        .meta-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .meta {
+            border: 1px solid var(--border);
+            background: var(--surface-2);
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .meta .k {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            color: var(--muted);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .meta .v {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        #status {
+            border: 1px solid var(--border);
+            background: #eef2ff;
+            color: #23357d;
+            border-radius: 10px;
+            min-height: 56px;
+            padding: 12px 14px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        #status.connected {
+            background: var(--success-bg);
+            color: var(--success-text);
+            border-color: #c7ebd6;
+        }
+
+        #status.high {
+            background: var(--warn-bg);
+            color: var(--warn-text);
+            border-color: #f3d8b8;
+        }
+
+        #status.critical {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+            border-color: #f4c6cd;
+        }
+
+        .btn-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .btn {
+            height: 46px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0;
+            transition: transform 120ms ease, filter 120ms ease;
+        }
+
+        .btn:hover { transform: translateY(-1px); filter: brightness(1.02); }
+        .btn:active { transform: translateY(0); }
+
+        #startBtn {
+            color: #fff;
+            background: linear-gradient(180deg, #243a96 0%, #162965 100%);
+        }
+
+        #stopBtn {
+            color: #fff;
+            background: linear-gradient(180deg, #c8374f 0%, #9f2138 100%);
+            display: none;
+        }
+
+        .placeholder {
+            border: 1px dashed var(--border);
+            background: #fafbff;
+            border-radius: 10px;
+            min-height: 46px;
+        }
+
+        #transcript {
+            max-height: 260px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--surface-2);
+            padding: 10px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .turn {
+            border-radius: 8px;
+            padding: 9px 10px;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .turn.user {
+            background: #e8efff;
+            border: 1px solid #d4e0ff;
+        }
+
+        .turn.agent {
+            background: #eef8f1;
+            border: 1px solid #cde9d5;
+        }
+
+        .turn .label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--muted);
+            margin-bottom: 3px;
+        }
+
+        @media (max-width: 640px) {
+            .panel-head h1 { font-size: 21px; }
+            .meta-row { grid-template-columns: 1fr; }
+            .btn-row { grid-template-columns: 1fr; }
+            .session { display: none; }
+        }
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">
+        <span class="brand-mark">1092</span>
+        <span>Vani Assist</span>
+    </div>
+    <div class="session">Citizen Voice Session</div>
+</header>
+
+<main class="wrap">
+    <section class="call-panel">
+        <div class="panel-head">
+            <h1>Citizen Voice Helpline</h1>
+            <p>Speak naturally in Kannada, Hindi, or English. The system confirms understanding before routing.</p>
+        </div>
+        <div class="panel-body">
+            <div class="meta-row">
+                <div class="meta">
+                    <div class="k">Supported Languages</div>
+                    <div class="v">Kannada · Hindi · English</div>
+                </div>
+                <div class="meta">
+                    <div class="k">Connection</div>
+                    <div class="v" id="connQuality">Ready to connect</div>
+                </div>
+            </div>
+
+            <div id="status">Press Start Call to connect to an operator flow.</div>
+
+            <div class="btn-row">
+                <button class="btn" id="startBtn" onclick="startCall()">Start Call</button>
+                <button class="btn" id="stopBtn" onclick="stopCall()">End Call</button>
+                <div class="placeholder" id="placeholderBtn"></div>
+            </div>
+
+            <div id="transcript"></div>
+        </div>
+    </section>
+</main>
+
+<script>
+const API_BASE = window.location.protocol + '//' + window.location.host;
+let room = null;
+let remoteAudio = null;
+let micReady = false;
+let disconnectReason = '';
+
+function setConnectionText(text) {
+    const el = document.getElementById('connQuality');
+    el.textContent = text;
+}
+
+async function startCall() {
+    document.getElementById('startBtn').style.display = 'none';
+    document.getElementById('stopBtn').style.display = 'block';
+    document.getElementById('placeholderBtn').style.display = 'none';
+    micReady = false;
+    disconnectReason = '';
+    setStatus('Getting secure access token...', '');
+    setConnectionText('Authenticating');
+
+    try {
+        const identity = 'citizen-' + Math.random().toString(36).slice(2, 7);
+        const roomName = 'vani-1092-' + Math.random().toString(36).slice(2, 5);
+        const tokenRes = await fetch(`${API_BASE}/api/token?room=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`);
+        const tokenData = await tokenRes.json();
+
+        if (tokenData.error) {
+            setStatus('Connection error: ' + tokenData.error, 'critical');
+            resetButtons();
+            setConnectionText('Error');
+            return;
+        }
+
+        setStatus('Connecting to voice room...', '');
+        setConnectionText('Connecting');
+
+        room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+
+        room.on('connected', () => {
+            setStatus('Voice room connected. Waiting for microphone access...', 'high');
+            setConnectionText('Mic permission needed');
+        });
+
+        room.on('disconnected', () => {
+            if (disconnectReason) {
+                setStatus(disconnectReason, 'critical');
+                setConnectionText('Error');
+            } else {
+                setStatus('Disconnected from session.', '');
+                setConnectionText('Disconnected');
+            }
+            resetButtons();
+        });
+
+        room.on('trackSubscribed', (track) => {
+            if (track.kind === 'audio') {
+                if (!remoteAudio) {
+                    remoteAudio = document.createElement('audio');
+                    remoteAudio.autoplay = true;
+                    document.body.appendChild(remoteAudio);
+                }
+                track.attach(remoteAudio);
+                addTurn('agent', 'Voice response received.');
+            }
+        });
+
+        await room.connect(tokenData.url, tokenData.token);
+        setStatus('Allow microphone access to start speaking.', 'high');
+        await room.localParticipant.setMicrophoneEnabled(true);
+        micReady = true;
+        setStatus('Connected. Speak now.', 'connected');
+        setConnectionText('Microphone active');
+        addTurn('agent', 'You are connected. Please describe your issue.');
+    } catch (e) {
+        if (room && !micReady) {
+            disconnectReason = 'Error: ' + e.message;
+            room.disconnect();
+            room = null;
+        } else {
+            disconnectReason = '';
+        }
+        setStatus('Error: ' + e.message, 'critical');
+        setConnectionText('Error');
+        resetButtons();
+    }
+}
+
+function stopCall() {
+    if (room) {
+        room.disconnect();
+        room = null;
+    }
+    if (remoteAudio) {
+        remoteAudio.remove();
+        remoteAudio = null;
+    }
+    setStatus('Call ended.', '');
+    setConnectionText('Ready to connect');
+    resetButtons();
+}
+
+function resetButtons() {
+    document.getElementById('startBtn').style.display = 'block';
+    document.getElementById('stopBtn').style.display = 'none';
+    document.getElementById('placeholderBtn').style.display = 'block';
+}
+
+function setStatus(text, cls) {
+    const el = document.getElementById('status');
+    el.textContent = text;
+    el.className = cls || '';
+}
+
+function addTurn(speaker, text) {
+    const turn = document.createElement('div');
+    turn.className = 'turn ' + speaker;
+    turn.innerHTML = '<div class="label">' + (speaker === 'user' ? 'Citizen' : 'Vani') + '</div>' + text;
+    const transcript = document.getElementById('transcript');
+    transcript.appendChild(turn);
+    transcript.scrollTop = transcript.scrollHeight;
+}
+</script>
+</body>
+</html>

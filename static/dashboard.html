@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vani-1092 | Operator Console</title>
+    <style>
+        :root {
+            --bg: #f3f5fb;
+            --surface: #ffffff;
+            --surface-2: #f8f9fe;
+            --text: #152445;
+            --muted: #5f6b84;
+            --border: #dbe2f1;
+            --navy: #192b78;
+            --navy-strong: #12205c;
+            --ok: #1c7b45;
+            --ok-bg: #e9f7ef;
+            --danger: #b3263f;
+            --danger-bg: #feecef;
+            --warn: #ad6202;
+            --warn-bg: #fff4e7;
+            --shadow: 0 14px 28px rgba(20, 32, 62, 0.08);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "Segoe UI", "Noto Sans", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .topbar {
+            background: linear-gradient(180deg, #22378e 0%, #172a71 100%);
+            color: #fff;
+            padding: 14px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .topbar h1 { font-size: 19px; font-weight: 700; letter-spacing: 0; }
+        .presence {
+            font-size: 12px;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.16);
+            border: 1px solid rgba(255, 255, 255, 0.20);
+            padding: 6px 10px;
+            border-radius: 999px;
+        }
+
+        .wrap {
+            max-width: 1320px;
+            margin: 0 auto;
+            padding: 16px;
+            display: grid;
+            gap: 14px;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .metric {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            box-shadow: var(--shadow);
+            min-height: 82px;
+        }
+
+        .metric .k {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .metric .v {
+            font-size: 26px;
+            font-weight: 800;
+            line-height: 1;
+            color: var(--navy-strong);
+            margin-bottom: 4px;
+        }
+
+        .metric .sub {
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .main {
+            display: grid;
+            grid-template-columns: 1.55fr 1fr;
+            gap: 14px;
+            min-height: 68vh;
+        }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .panel-head {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface-2);
+        }
+
+        .panel-head h2 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--navy-strong);
+        }
+
+        .panel-head .hint {
+            font-size: 11px;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .table-wrap {
+            overflow: auto;
+            max-height: calc(68vh - 52px);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            table-layout: fixed;
+        }
+
+        th {
+            text-align: left;
+            padding: 10px 11px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--border);
+            background: #fafbff;
+        }
+
+        td {
+            padding: 10px 11px;
+            border-bottom: 1px solid #eef2fb;
+            vertical-align: middle;
+            line-height: 1.3;
+        }
+
+        .queue-row { cursor: pointer; transition: background 110ms ease; }
+        .queue-row:hover { background: #f5f8ff; }
+        .queue-row.selected { background: #edf2ff; }
+
+        .urgency {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+            min-width: 78px;
+        }
+        .urgency.CRITICAL { color: #a61d35; background: #feecef; }
+        .urgency.HIGH { color: #964f00; background: #fff1e1; }
+        .urgency.MEDIUM { color: #8e6400; background: #fff8dc; }
+        .urgency.LOW { color: #1f6f43; background: #e9f7ef; }
+
+        .lang {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            color: #304063;
+            background: #eef2ff;
+            border: 1px solid #dbe3fb;
+            border-radius: 999px;
+            padding: 3px 7px;
+            white-space: nowrap;
+        }
+
+        .queue-action {
+            width: 100%;
+            border: 1px solid #2a4298;
+            background: #213789;
+            color: #fff;
+            height: 31px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .queue-action:hover { background: #1a2f79; }
+
+        .detail {
+            padding: 14px;
+            display: grid;
+            gap: 11px;
+            overflow: auto;
+        }
+
+        .detail-empty {
+            color: var(--muted);
+            font-size: 14px;
+            font-style: italic;
+            padding: 12px;
+        }
+
+        .detail-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .detail-card {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--surface-2);
+            padding: 10px;
+        }
+
+        .detail-card h3 {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 8px;
+        }
+
+        .summary-text {
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .kv-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 10px;
+        }
+
+        .kv {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            padding: 8px;
+        }
+
+        .kv .k {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+            font-weight: 700;
+            margin-bottom: 4px;
+            letter-spacing: 0.03em;
+        }
+
+        .kv .v {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.35;
+            word-break: break-word;
+        }
+
+        .transcript {
+            max-height: 200px;
+            overflow-y: auto;
+            display: grid;
+            gap: 7px;
+        }
+
+        .turn {
+            border-radius: 8px;
+            border: 1px solid #e5ebfa;
+            background: #fff;
+            padding: 8px;
+            font-size: 12px;
+            line-height: 1.42;
+        }
+
+        .turn .spk {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 800;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 3px;
+        }
+
+        .detail-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .btn {
+            border: none;
+            height: 36px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .btn.primary { background: #213789; color: #fff; }
+        .btn.primary:hover { background: #1b2f78; }
+        .btn.neutral { background: #eff3ff; color: #2f4471; border: 1px solid #d9e2fb; }
+        .btn.neutral:hover { background: #e7edff; }
+        .btn.danger { background: #b52f45; color: #fff; }
+        .btn.danger:hover { background: #9e283d; }
+        .btn.success { background: #1f7f47; color: #fff; }
+        .btn.success:hover { background: #176a3a; }
+
+        .meta-pill {
+            font-size: 11px;
+            font-weight: 700;
+            color: #314166;
+            background: #f0f3ff;
+            border: 1px solid #dbe3fb;
+            border-radius: 999px;
+            padding: 4px 8px;
+            white-space: nowrap;
+        }
+
+        .empty-cell {
+            color: #8d97ad;
+            text-align: center;
+            padding: 18px;
+            font-style: italic;
+        }
+
+        @media (max-width: 1100px) {
+            .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .main { grid-template-columns: 1fr; min-height: auto; }
+            .table-wrap { max-height: 45vh; }
+        }
+
+        @media (max-width: 680px) {
+            .wrap { padding: 10px; }
+            .metrics { grid-template-columns: 1fr; }
+            .kv-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <h1>1092 Operator Console</h1>
+    <span class="presence">Online</span>
+</header>
+
+<main class="wrap">
+    <section class="metrics">
+        <article class="metric">
+            <div class="k">Active Queue</div>
+            <div class="v" id="mActive">0</div>
+            <div class="sub">Waiting operator</div>
+        </article>
+        <article class="metric">
+            <div class="k">Critical Calls</div>
+            <div class="v" id="mCritical">0</div>
+            <div class="sub">Immediate handoff</div>
+        </article>
+        <article class="metric">
+            <div class="k">Avg Confidence</div>
+            <div class="v" id="mConfidence">0%</div>
+            <div class="sub">AI interpretation score</div>
+        </article>
+        <article class="metric">
+            <div class="k">Avg Wait</div>
+            <div class="v" id="mWait">0m</div>
+            <div class="sub">Queue delay estimate</div>
+        </article>
+    </section>
+
+    <section class="main">
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Active Call Queue</h2>
+                <span class="hint">Auto-refresh every 2 seconds</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 90px;">Time</th>
+                            <th style="width: 88px;">Urgency</th>
+                            <th style="width: 120px;">Intent</th>
+                            <th>Location</th>
+                            <th style="width: 90px;">Language</th>
+                            <th style="width: 90px;">Confidence</th>
+                            <th style="width: 86px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="callQueue">
+                        <tr><td colspan="7" class="empty-cell">No active calls</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </article>
+
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Call Detail</h2>
+                <span class="hint" id="detailCallId">No call selected</span>
+            </div>
+            <div class="detail" id="callDetail">
+                <p class="detail-empty">Select a call from the queue to review AI understanding and take action.</p>
+            </div>
+        </article>
+    </section>
+</main>
+
+<script>
+let selectedCallId = null;
+let latestCalls = [];
+
+function safeJsonParse(value, fallback) {
+    try { return JSON.parse(value); } catch (_) { return fallback; }
+}
+
+function formatTime(ts) {
+    if (!ts) return '-';
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function minutesSince(ts) {
+    if (!ts) return 0;
+    const diffMs = Date.now() - new Date(ts).getTime();
+    return Math.max(0, Math.round(diffMs / 60000));
+}
+
+function setMetrics(calls) {
+    const active = calls.length;
+    const critical = calls.filter(c => c.urgency === 'CRITICAL').length;
+    const avgConf = calls.length
+        ? Math.round((calls.reduce((acc, c) => acc + (Number(c.confidence) || 0), 0) / calls.length) * 100)
+        : 0;
+    const avgWait = calls.length
+        ? Math.round(calls.reduce((acc, c) => acc + minutesSince(c.created_at), 0) / calls.length)
+        : 0;
+
+    document.getElementById('mActive').textContent = String(active);
+    document.getElementById('mCritical').textContent = String(critical);
+    document.getElementById('mConfidence').textContent = avgConf + '%';
+    document.getElementById('mWait').textContent = avgWait + 'm';
+}
+
+function renderQueue(calls) {
+    const tbody = document.getElementById('callQueue');
+    if (!calls.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">No active calls</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = calls.map(c => {
+        const handoff = safeJsonParse(c.handoff_payload || '{}', {});
+        const lang = handoff.stt_language_code || handoff.language_hint || c.language || 'auto';
+        const conf = c.confidence ? Math.round(Number(c.confidence) * 100) + '%' : '-';
+        const isSelected = c.id === selectedCallId ? 'selected' : '';
+        return `
+            <tr class="queue-row ${isSelected}" onclick="selectCall('${c.id}')">
+                <td>${formatTime(c.created_at)}</td>
+                <td><span class="urgency ${c.urgency}">${c.urgency || 'LOW'}</span></td>
+                <td>${c.intent || '-'}</td>
+                <td>${c.location || '-'}</td>
+                <td><span class="lang">${lang}</span></td>
+                <td>${conf}</td>
+                <td><button class="queue-action" onclick="event.stopPropagation(); acceptCall('${c.id}')">Accept</button></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderDetail(c, handoff, transcript) {
+    document.getElementById('detailCallId').textContent = 'Call ID: ' + c.id;
+    const confidence = c.confidence ? Math.round(Number(c.confidence) * 100) + '%' : '-';
+    const sttProb = handoff.stt_language_probability
+        ? Math.round(Number(handoff.stt_language_probability) * 100) + '%'
+        : '0%';
+
+    document.getElementById('callDetail').innerHTML = `
+        <div class="detail-top">
+            <span class="urgency ${c.urgency}">${c.urgency || 'LOW'}</span>
+            <span class="meta-pill">${handoff.stt_language_code || handoff.language_hint || c.language || 'auto'}</span>
+        </div>
+
+        <div class="detail-card">
+            <h3>AI Summary</h3>
+            <p class="summary-text">${c.summary || 'Waiting for AI summary...'}</p>
+        </div>
+
+        <div class="detail-card">
+            <h3>Case Signals</h3>
+            <div class="kv-grid">
+                <div class="kv"><div class="k">Intent</div><div class="v">${c.intent || '-'}</div></div>
+                <div class="kv"><div class="k">Location</div><div class="v">${c.location || '-'}</div></div>
+                <div class="kv"><div class="k">Confidence</div><div class="v">${confidence}</div></div>
+                <div class="kv"><div class="k">Confirmed</div><div class="v">${c.confirmation_given ? 'Yes' : 'No'}</div></div>
+                <div class="kv"><div class="k">Emotion</div><div class="v">${handoff.emotion || '-'}</div></div>
+                <div class="kv"><div class="k">STT Confidence</div><div class="v">${sttProb}</div></div>
+            </div>
+        </div>
+
+        <div class="detail-card">
+            <h3>Transcript</h3>
+            <div class="transcript">
+                ${transcript.length
+                    ? transcript.map(t => `<div class="turn"><div class="spk">${t.speaker === 'user' ? 'Citizen' : 'Vani'}</div>${t.text || ''}</div>`).join('')
+                    : '<div class="turn">No transcript available.</div>'}
+            </div>
+        </div>
+
+        <div class="detail-actions">
+            <button class="btn primary" onclick="acceptCall('${c.id}')">Accept Call</button>
+            <button class="btn danger" onclick="closeCall('${c.id}')">Close Call</button>
+            <button class="btn success" onclick="feedback('${c.id}', true)">AI Correct</button>
+            <button class="btn neutral" onclick="feedback('${c.id}', false)">AI Incorrect</button>
+        </div>
+    `;
+}
+
+async function loadCalls() {
+    const res = await fetch('/api/calls');
+    const calls = await res.json();
+    latestCalls = Array.isArray(calls) ? calls : [];
+    setMetrics(latestCalls);
+    renderQueue(latestCalls);
+
+    if (selectedCallId) {
+        const selected = latestCalls.find(c => c.id === selectedCallId);
+        if (selected) {
+            await selectCall(selectedCallId, false);
+        } else {
+            selectedCallId = null;
+            document.getElementById('detailCallId').textContent = 'No call selected';
+            document.getElementById('callDetail').innerHTML = '<p class="detail-empty">Select a call from the queue to review AI understanding and take action.</p>';
+        }
+    }
+}
+
+async function selectCall(id, refreshQueue = true) {
+    selectedCallId = id;
+    const res = await fetch('/api/calls/' + id);
+    const c = await res.json();
+    const transcript = safeJsonParse(c.transcript || '[]', []);
+    const handoff = safeJsonParse(c.handoff_payload || '{}', {});
+    renderDetail(c, handoff, transcript);
+    if (refreshQueue) renderQueue(latestCalls);
+}
+
+async function acceptCall(id) {
+    await fetch('/api/calls/' + id + '/accept', { method: 'POST' });
+    await loadCalls();
+}
+
+async function closeCall(id) {
+    await fetch('/api/calls/' + id + '/close', { method: 'POST' });
+    if (selectedCallId === id) {
+        selectedCallId = null;
+        document.getElementById('detailCallId').textContent = 'No call selected';
+        document.getElementById('callDetail').innerHTML = '<p class="detail-empty">Select a call from the queue to review AI understanding and take action.</p>';
+    }
+    await loadCalls();
+}
+
+async function feedback(id, ok) {
+    let corrected = '';
+    let notes = '';
+    if (!ok) {
+        corrected = prompt('Corrected intent (harassment/complaint/help_request/emergency/general):', '') || '';
+        notes = prompt('What was wrong in AI understanding?', '') || '';
+    }
+    const params = new URLSearchParams({
+        operator_id: 'op1',
+        ai_was_correct: String(ok),
+        corrected_intent: corrected,
+        notes: notes
+    });
+    await fetch('/api/calls/' + id + '/feedback?' + params.toString(), { method: 'POST' });
+}
+
+setInterval(loadCalls, 2000);
+loadCalls();
+</script>
+</body>
+</html>

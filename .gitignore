@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venv314/
+venv/
+ENV/
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# Audio
+*.wav
+*.mp3
+
+# Caches & Logs
+.local_cache/
+.local_tmp/
+.pytest_cache/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+/.venv/
+/.local_cache/
+/.local_tmp/
+/outputs/
+*.db
