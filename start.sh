@@ -1,3 +1,6 @@
 #!/bin/bash
+export PORT=${PORT:-8001}
+echo "Starting Server on port $PORT..."
 python server.py &
-python agent.py dev
+echo "Starting Agent..."
+exec python agent.py dev

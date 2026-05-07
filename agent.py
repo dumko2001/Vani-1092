@@ -13,6 +13,7 @@ Requirements:
 import os
 import asyncio
 import uuid
+import json
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -36,6 +37,17 @@ from vani1092.conversation_engine import (
 load_dotenv()
 
 participant_states = {}
+
+
+async def publish_ui_event(room: rtc.Room, payload: dict):
+    """Best-effort data-channel event for the citizen UI debug timeline."""
+    try:
+        await room.local_participant.publish_data(
+            json.dumps(payload).encode("utf-8"),
+            reliability=rtc.DataPacketReliability.RELIABLE,
+        )
+    except Exception as e:
+        print(f"[Data Error] {e}", flush=True)
 
 
 def _tts_language_from_analysis(analysis: dict) -> str:
@@ -89,7 +101,14 @@ async def handle_citizen(track: rtc.Track, participant, room, audio_source):
     }
     
     # Greet
-    await speak(audio_source, "Hello, I am Vani. Please tell me how I can help you today.", language_code="en-IN")
+    await publish_ui_event(room, {"type": "debug", "stage": "livekit", "text": "Agent subscribed to citizen audio."})
+    await speak(
+        audio_source,
+        room,
+        "Hello, I am Vani. Please tell me how I can help you today.",
+        language_code="en-IN",
+        call_id=call_id,
+    )
     
     audio_stream = rtc.AudioStream(track, sample_rate=48000, num_channels=1)
     buffer = bytearray()
@@ -103,28 +122,52 @@ async def handle_citizen(track: rtc.Track, participant, room, audio_source):
         buffer.extend(frame.frame.data.tobytes())
         now = asyncio.get_event_loop().time()
         
-        # Process every ~2.5 seconds of audio
-        if len(buffer) >= 48000 * 2 * 2.5:  # 2.5s, 48kHz, mono, int16
+        # Process every ~1.5 seconds of audio
+        if len(buffer) >= 48000 * 2 * 1.5:  # 1.5s, 48kHz, mono, int16
             data = bytes(buffer)
             buffer = bytearray()
             
             if not is_speech_present(data):
+                print(f"[Agent] Audio chunk had no clear speech ({len(data)} bytes)", flush=True)
+                await publish_ui_event(room, {
+                    "type": "debug",
+                    "stage": "audio",
+                    "text": f"Audio reached agent, but speech energy was low ({len(data)} bytes).",
+                })
                 continue
+
+            print(f"[Agent] Speech detected, processing {len(data)} bytes...", flush=True)
+            await publish_ui_event(room, {
+                "type": "debug",
+                "stage": "audio",
+                "text": f"Agent received microphone audio ({len(data)} bytes). Sending to STT.",
+            })
             
             # STT
             try:
                 wav = livekit_to_wav(data, sample_rate=48000, channels=1)
                 stt_result = sarvam_stt_with_meta(wav, language_code="unknown")
             except Exception as e:
-                print(f"[STT Error] {e}")
+                print(f"[STT Error] {e}", flush=True)
+                await publish_ui_event(room, {"type": "debug", "stage": "stt", "text": f"STT error: {e}"})
                 continue
             transcript = stt_result.get("transcript", "")
             
             if not transcript or not transcript.strip():
+                print("[Agent] STT returned empty transcript", flush=True)
+                await publish_ui_event(room, {"type": "debug", "stage": "stt", "text": "STT returned an empty transcript."})
                 continue
             
-            print(f"[Citizen] {transcript}")
+            print(f"[Citizen] {transcript}", flush=True)
             db.add_transcript_turn(call_id, "user", transcript)
+            
+            # Send to UI via Data Channel
+            await publish_ui_event(room, {
+                "type": "transcript",
+                "speaker": "user",
+                "text": transcript,
+                "source": "server-stt",
+            })
             
             # Process
             await process_turn(
@@ -132,6 +175,7 @@ async def handle_citizen(track: rtc.Track, participant, room, audio_source):
                 call_id,
                 transcript,
                 audio_source,
+                room,
                 stt_result.get("language_code", ""),
                 stt_result.get("language_probability", 0.0),
             )
@@ -140,7 +184,7 @@ async def handle_citizen(track: rtc.Track, participant, room, audio_source):
         del participant_states[participant.identity]
 
 
-async def process_turn(identity, call_id, transcript, audio_source, stt_language_code="", stt_language_probability=0.0):
+async def process_turn(identity, call_id, transcript, audio_source, room, stt_language_code="", stt_language_probability=0.0):
     state = participant_states.get(identity)
     if not state:
         return
@@ -153,19 +197,19 @@ async def process_turn(identity, call_id, transcript, audio_source, stt_language
             state["confirmed"] = True
             state["awaiting_confirmation"] = False
             msg = await build_route_message(state["analysis"], transcript)
-            await speak(audio_source, msg, language_code=_tts_language_from_analysis(state.get("analysis")))
-            await do_handoff(call_id, state)
+            await speak(audio_source, room, msg, language_code=_tts_language_from_analysis(state.get("analysis")), call_id=call_id)
+            await do_handoff(call_id, state, room)
             return
             
         elif result == "no":
             state["awaiting_confirmation"] = False
             state["analysis"] = None
             msg = await build_reask_prompt(transcript)
-            await speak(audio_source, msg, language_code=_tts_language_from_analysis(state.get("analysis")))
+            await speak(audio_source, room, msg, language_code=_tts_language_from_analysis(state.get("analysis")), call_id=call_id)
             return
             
         else:
-            await speak(audio_source, "I did not catch that. Please say yes or no.", language_code="en-IN")
+            await speak(audio_source, room, "I did not catch that. Please say yes or no.", language_code="en-IN", call_id=call_id)
             return
     
     # Fresh analysis
@@ -176,35 +220,47 @@ async def process_turn(identity, call_id, transcript, audio_source, stt_language
             stt_language_probability=stt_language_probability,
         )
     except Exception as e:
-        print(f"[Analysis Error] {e}")
-        await speak(audio_source, "I did not understand. Can you please repeat that?", language_code="en-IN")
+        print(f"[Analysis Error] {e}", flush=True)
+        await publish_ui_event(room, {"type": "debug", "stage": "analysis", "text": f"Analysis error: {e}"})
+        await speak(audio_source, room, "I did not understand. Can you please repeat that?", language_code="en-IN", call_id=call_id)
         return
     
     state["analysis"] = analysis
-    print(f"[Analysis] {analysis['intent']} | {analysis['urgency']} | conf={analysis['confidence']:.2f}")
+    print(f"[Analysis] {analysis['intent']} | {analysis['urgency']} | conf={analysis['confidence']:.2f}", flush=True)
+    await publish_ui_event(room, {
+        "type": "debug",
+        "stage": "analysis",
+        "text": f"Understood as {analysis['intent']} / {analysis['urgency']} / {analysis['confidence']:.0%} confidence.",
+    })
     
     # Critical bypass
     if should_bypass_confirmation(analysis):
         msg = await build_route_message(analysis, transcript)
-        await speak(audio_source, msg, language_code=_tts_language_from_analysis(analysis))
-        await do_handoff(call_id, state)
+        await speak(audio_source, room, msg, language_code=_tts_language_from_analysis(analysis), call_id=call_id)
+        await do_handoff(call_id, state, room)
         return
     
     # Low confidence
     if analysis["confidence"] < CONFIDENCE_THRESHOLD:
         msg = await build_reask_prompt(transcript)
-        await speak(audio_source, msg, language_code=_tts_language_from_analysis(analysis))
+        await speak(audio_source, room, msg, language_code=_tts_language_from_analysis(analysis), call_id=call_id)
         return
     
     # Ask for confirmation
     state["awaiting_confirmation"] = True
     msg = await build_confirmation_prompt(analysis, transcript)
-    await speak(audio_source, msg, language_code=_tts_language_from_analysis(analysis))
+    await speak(audio_source, room, msg, language_code=_tts_language_from_analysis(analysis), call_id=call_id)
 
 
-async def speak(audio_source: rtc.AudioSource, text: str, language_code: str = "en-IN"):
-    """TTS and publish audio frames."""
-    print(f"[Agent] {text}")
+async def speak(audio_source: rtc.AudioSource, room: rtc.Room, text: str, language_code: str = "en-IN", call_id: str = None):
+    """TTS and publish audio frames + send transcript to UI."""
+    print(f"[Agent] {text}", flush=True)
+    if call_id:
+        db.add_transcript_turn(call_id, "agent", text)
+    
+    # Send to UI
+    await publish_ui_event(room, {"type": "transcript", "speaker": "agent", "text": text, "source": "agent"})
+
     try:
         audio_bytes = sarvam_tts(text, language_code=language_code)
         frames = wav_to_livekit_frames(audio_bytes)
@@ -212,10 +268,11 @@ async def speak(audio_source: rtc.AudioSource, text: str, language_code: str = "
             frame = rtc.AudioFrame(frame_data, 48000, 1, 480)
             await audio_source.capture_frame(frame)
     except Exception as e:
-        print(f"[TTS Error] {e}")
+        print(f"[TTS Error] {e}", flush=True)
+        await publish_ui_event(room, {"type": "debug", "stage": "tts", "text": f"TTS error: {e}"})
 
 
-async def do_handoff(call_id: str, state: dict):
+async def do_handoff(call_id: str, state: dict, room: rtc.Room):
     state["routed"] = True
     analysis = state["analysis"]
     call = db.get_call(call_id)
@@ -240,7 +297,14 @@ async def do_handoff(call_id: str, state: dict):
         confirmation_given=0 if should_bypass_confirmation(analysis) else int(state.get("confirmed", False)),
         handoff_payload=json.dumps(payload),
     )
-    print(f"[Handoff] Call {call_id} → operator queue")
+    print(f"[Handoff] Call {call_id} → operator queue", flush=True)
+    await publish_ui_event(room, {
+        "type": "handoff",
+        "call_id": call_id,
+        "status": "waiting_operator",
+        "text": "Call is now in the operator dashboard queue.",
+        "payload": payload,
+    })
 
 
 if __name__ == "__main__":

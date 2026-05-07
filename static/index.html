@@ -223,6 +223,77 @@
             gap: 8px;
         }
 
+        .debug-panel {
+            margin-top: 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #fbfcff;
+            overflow: hidden;
+        }
+
+        .debug-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 9px 10px;
+            background: #eef2ff;
+            border-bottom: 1px solid var(--border);
+            color: #253a84;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .signal-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            padding: 10px;
+        }
+
+        .signal {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            padding: 8px;
+            min-height: 58px;
+        }
+
+        .signal .k {
+            font-size: 10px;
+            color: var(--muted);
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 4px;
+        }
+
+        .signal .v {
+            font-size: 12px;
+            line-height: 1.35;
+            color: var(--text);
+            word-break: break-word;
+        }
+
+        #debugLog {
+            max-height: 120px;
+            overflow-y: auto;
+            padding: 0 10px 10px;
+            display: grid;
+            gap: 6px;
+        }
+
+        .debug-line {
+            border-left: 3px solid #9aa9db;
+            background: #fff;
+            border-radius: 6px;
+            padding: 6px 8px;
+            color: #405071;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
         .turn {
             border-radius: 8px;
             padding: 9px 10px;
@@ -293,6 +364,32 @@
             </div>
 
             <div id="transcript"></div>
+
+            <div class="debug-panel">
+                <div class="debug-head">
+                    <span>Live Debug Signal</span>
+                    <span id="debugState">idle</span>
+                </div>
+                <div class="signal-grid">
+                    <div class="signal">
+                        <div class="k">Browser Heard</div>
+                        <div class="v" id="localHeard">Not listening yet.</div>
+                    </div>
+                    <div class="signal">
+                        <div class="k">Server Heard</div>
+                        <div class="v" id="serverHeard">Waiting for agent STT.</div>
+                    </div>
+                    <div class="signal">
+                        <div class="k">Vani Said</div>
+                        <div class="v" id="vaniSaid">Waiting for Vani.</div>
+                    </div>
+                    <div class="signal">
+                        <div class="k">Handoff</div>
+                        <div class="v" id="handoffState">Not routed yet.</div>
+                    </div>
+                </div>
+                <div id="debugLog"></div>
+            </div>
         </div>
     </section>
 </main>
@@ -303,10 +400,93 @@ let room = null;
 let remoteAudio = null;
 let micReady = false;
 let disconnectReason = '';
+let speechRecognition = null;
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 function setConnectionText(text) {
     const el = document.getElementById('connQuality');
     el.textContent = text;
+}
+
+function setSignal(id, text) {
+    document.getElementById(id).textContent = text;
+}
+
+function addDebug(stage, text) {
+    document.getElementById('debugState').textContent = stage;
+    const line = document.createElement('div');
+    line.className = 'debug-line';
+    line.textContent = new Date().toLocaleTimeString() + ' · ' + stage + ' · ' + text;
+    const log = document.getElementById('debugLog');
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+}
+
+function startLocalSpeechPreview() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        setSignal('localHeard', 'Browser speech preview unavailable here; LiveKit mic can still work.');
+        addDebug('browser-stt', 'Web Speech API is unavailable in this browser.');
+        return;
+    }
+
+    stopLocalSpeechPreview();
+    speechRecognition = new SpeechRecognition();
+    speechRecognition.continuous = true;
+    speechRecognition.interimResults = true;
+    speechRecognition.lang = 'en-IN';
+
+    speechRecognition.onstart = () => {
+        setSignal('localHeard', 'Listening locally...');
+        addDebug('browser-stt', 'Local speech preview started.');
+    };
+
+    speechRecognition.onresult = (event) => {
+        let interim = '';
+        let finalText = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const text = event.results[i][0].transcript.trim();
+            if (event.results[i].isFinal) finalText += text + ' ';
+            else interim += text + ' ';
+        }
+        const heard = (finalText || interim).trim();
+        if (heard) setSignal('localHeard', heard);
+        if (finalText.trim()) addTurn('local', finalText.trim(), 'Browser preview');
+    };
+
+    speechRecognition.onerror = (event) => {
+        setSignal('localHeard', 'Local preview error: ' + event.error);
+        addDebug('browser-stt', 'Local speech preview error: ' + event.error);
+    };
+
+    speechRecognition.onend = () => {
+        if (room && micReady) {
+            try { speechRecognition.start(); } catch (_) {}
+        }
+    };
+
+    try {
+        speechRecognition.start();
+    } catch (e) {
+        addDebug('browser-stt', 'Could not start local speech preview: ' + e.message);
+    }
+}
+
+function stopLocalSpeechPreview() {
+    if (speechRecognition) {
+        const current = speechRecognition;
+        speechRecognition = null;
+        current.onend = null;
+        try { current.stop(); } catch (_) {}
+    }
 }
 
 async function startCall() {
@@ -339,9 +519,11 @@ async function startCall() {
         room.on('connected', () => {
             setStatus('Voice room connected. Waiting for microphone access...', 'high');
             setConnectionText('Mic permission needed');
+            addDebug('livekit', 'Room connected.');
         });
 
         room.on('disconnected', () => {
+            stopLocalSpeechPreview();
             if (disconnectReason) {
                 setStatus(disconnectReason, 'critical');
                 setConnectionText('Error');
@@ -350,6 +532,7 @@ async function startCall() {
                 setConnectionText('Disconnected');
             }
             resetButtons();
+            addDebug('livekit', 'Room disconnected.');
         });
 
         room.on('trackSubscribed', (track) => {
@@ -360,7 +543,30 @@ async function startCall() {
                     document.body.appendChild(remoteAudio);
                 }
                 track.attach(remoteAudio);
-                addTurn('agent', 'Voice response received.');
+                addDebug('livekit', 'Subscribed to Vani audio track.');
+            }
+        });
+
+        room.on('localTrackPublished', (publication) => {
+            addDebug('microphone', 'Local track published: ' + publication.kind);
+        });
+
+        room.on('dataReceived', (payload, participant) => {
+            const str = new TextDecoder().decode(payload);
+            try {
+                const data = JSON.parse(str);
+                if (data.type === 'transcript') {
+                    addTurn(data.speaker, data.text, data.source || 'agent');
+                    if (data.speaker === 'user') setSignal('serverHeard', data.text);
+                    if (data.speaker === 'agent') setSignal('vaniSaid', data.text);
+                } else if (data.type === 'debug') {
+                    addDebug(data.stage || 'agent', data.text || '');
+                } else if (data.type === 'handoff') {
+                    setSignal('handoffState', data.text || 'Waiting operator');
+                    addDebug('handoff', 'Call ' + data.call_id + ' is waiting in operator dashboard.');
+                }
+            } catch (e) {
+                addDebug('data', 'Received non-JSON data packet.');
             }
         });
 
@@ -370,6 +576,7 @@ async function startCall() {
         micReady = true;
         setStatus('Connected. Speak now.', 'connected');
         setConnectionText('Microphone active');
+        startLocalSpeechPreview();
         addTurn('agent', 'You are connected. Please describe your issue.');
     } catch (e) {
         if (room && !micReady) {
@@ -394,8 +601,10 @@ function stopCall() {
         remoteAudio.remove();
         remoteAudio = null;
     }
+    stopLocalSpeechPreview();
     setStatus('Call ended.', '');
     setConnectionText('Ready to connect');
+    setSignal('localHeard', 'Not listening yet.');
     resetButtons();
 }
 
@@ -411,10 +620,13 @@ function setStatus(text, cls) {
     el.className = cls || '';
 }
 
-function addTurn(speaker, text) {
+function addTurn(speaker, text, source) {
     const turn = document.createElement('div');
-    turn.className = 'turn ' + speaker;
-    turn.innerHTML = '<div class="label">' + (speaker === 'user' ? 'Citizen' : 'Vani') + '</div>' + text;
+    const safeSpeaker = speaker === 'user' || speaker === 'agent' ? speaker : 'user';
+    turn.className = 'turn ' + safeSpeaker;
+    const label = speaker === 'user' ? 'Citizen' : speaker === 'agent' ? 'Vani' : 'Browser heard';
+    const sourceLabel = source ? ' · ' + source : '';
+    turn.innerHTML = '<div class="label">' + escapeHtml(label + sourceLabel) + '</div>' + escapeHtml(text);
     const transcript = document.getElementById('transcript');
     transcript.appendChild(turn);
     transcript.scrollTop = transcript.scrollHeight;

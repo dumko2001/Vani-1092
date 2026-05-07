@@ -76,8 +76,10 @@ def wav_to_livekit_frames(wav_bytes: bytes, target_sr: int = 48000) -> list[byte
     return frames
 
 
-def is_speech_present(audio_bytes: bytes, threshold: int = 500) -> bool:
+def is_speech_present(audio_bytes: bytes, threshold: int = 300) -> bool:
     """Simple energy-based VAD. Returns True if audio has significant energy."""
     arr = np.frombuffer(audio_bytes, dtype=np.int16)
-    energy = np.abs(arr).mean()
-    return energy > threshold
+    if len(arr) == 0:
+        return False
+    peak = np.abs(arr).max()
+    return peak > threshold
