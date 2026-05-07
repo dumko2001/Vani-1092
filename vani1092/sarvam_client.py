@@ -11,7 +11,7 @@ NOTE: These are BLOCKING synchronous calls. Use asyncio.to_thread() when calling
 import json
 import base64
 import requests
-from config import SARVAM_API_KEY, SARVAM_BASE_URL, STT_MODEL, LLM_MODEL, TTS_MODEL, TTS_SPEAKER
+from .config import SARVAM_API_KEY, SARVAM_BASE_URL, STT_MODEL, LLM_MODEL, TTS_MODEL, TTS_SPEAKER
 
 HEADERS_JSON = {"api-subscription-key": SARVAM_API_KEY, "Content-Type": "application/json"}
 HEADERS_FILE = {"api-subscription-key": SARVAM_API_KEY}  # requests sets multipart boundary

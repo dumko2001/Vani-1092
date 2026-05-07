@@ -19,10 +19,10 @@ from dotenv import load_dotenv
 from livekit import rtc
 from livekit.agents import JobContext, WorkerOptions, cli
 
-import database as db
-from audio_utils import livekit_to_wav, wav_to_livekit_frames, is_speech_present
-from sarvam_client import stt_with_meta as sarvam_stt_with_meta, tts as sarvam_tts
-from conversation_engine import (
+import vani1092.database as db
+from vani1092.audio_utils import livekit_to_wav, wav_to_livekit_frames, is_speech_present
+from vani1092.sarvam_client import stt_with_meta as sarvam_stt_with_meta, tts as sarvam_tts
+from vani1092.conversation_engine import (
     analyze_transcript,
     should_bypass_confirmation,
     build_confirmation_prompt,
@@ -245,6 +245,4 @@ async def do_handoff(call_id: str, state: dict):
 
 if __name__ == "__main__":
     db.init_db()
-    db.create_operator("op1", "Priya Sharma", ["hi", "en", "kn"])
-    print("[Agent] Starting Vani-1092 LiveKit Agent...")
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))

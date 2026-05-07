@@ -12,8 +12,8 @@ All LLM calls run in threads to avoid blocking the async event loop.
 import asyncio
 import json
 import re
-from sarvam_client import llm_chat, llm_json
-from config import PANIC_KEYWORDS, CONFIDENCE_THRESHOLD
+from .sarvam_client import llm_chat, llm_json
+from .config import PANIC_KEYWORDS, CONFIDENCE_THRESHOLD
 
 
 SYSTEM_UNDERSTANDING = """You are an AI assistant for a government helpline (1092).

@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-import database as db
+import vani1092.database as db
 
 app = FastAPI(title="Vani-1092 API")
 app.add_middleware(

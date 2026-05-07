@@ -4,7 +4,7 @@ import sqlite3
 import json
 from datetime import datetime, timezone
 from contextlib import contextmanager
-from config import DATABASE_PATH
+from .config import DATABASE_PATH
 
 
 def init_db():
