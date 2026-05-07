@@ -15,19 +15,21 @@ from scipy import signal
 
 
 def livekit_to_wav(audio_bytes: bytes, sample_rate: int = 48000, channels: int = 1) -> bytes:
-    """Convert LiveKit PCM buffer → 16kHz mono WAV for Sarvam STT."""
+    """Convert LiveKit PCM buffer → 16kHz mono WAV for Sarvam STT.
+
+    Uses linear interpolation for speed and to avoid FFT artifacts from signal.resample.
+    """
     arr = np.frombuffer(audio_bytes, dtype=np.int16)
     
-    # Deinterleave stereo
+    # Deinterleave stereo if needed
     if channels == 2:
         arr = arr.reshape(-1, 2).mean(axis=1).astype(np.int16)
     
-    # Resample 48kHz → 16kHz
+    # Resample 48kHz → 16kHz via interpolation
     if sample_rate != 16000:
-        arr_float = arr.astype(np.float32) / 32768.0
-        num_samples = int(len(arr_float) * 16000 / sample_rate)
-        arr_resampled = signal.resample(arr_float, num_samples)
-        arr = (arr_resampled * 32767).astype(np.int16)
+        old_indices = np.arange(len(arr))
+        new_indices = np.linspace(0, len(arr) - 1, int(len(arr) * 16000 / sample_rate))
+        arr = np.interp(new_indices, old_indices, arr).astype(np.int16)
     
     # Write WAV
     buf = io.BytesIO()
@@ -87,7 +89,7 @@ def audio_energy(audio_bytes: bytes) -> tuple[int, float]:
     return peak, rms
 
 
-def is_speech_present(audio_bytes: bytes, peak_threshold: int = 80, rms_threshold: float = 6.0) -> bool:
+def is_speech_present(audio_bytes: bytes, peak_threshold: int = 450, rms_threshold: float = 15.0) -> bool:
     """Conservative energy gate; browser mics can arrive much quieter than files."""
     peak, rms = audio_energy(audio_bytes)
     return peak > peak_threshold or rms > rms_threshold
