@@ -169,4 +169,5 @@ async def health():
 if __name__ == "__main__":
     db.init_db()
     db.create_operator("op1", "Priya Sharma", ["hi", "en", "kn"])
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
