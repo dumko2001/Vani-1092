@@ -21,12 +21,13 @@ ENV/
 .local_tmp/
 .pytest_cache/
 *.log
+outputs/
 
 # OS
 .DS_Store
 Thumbs.db
-/.venv/
-/.local_cache/
-/.local_tmp/
-/outputs/
-*.db
+
+# Project Specific
+.qa/
+.home_stub/
+scripts/
